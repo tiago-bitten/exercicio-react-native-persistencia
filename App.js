@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 import {
   Appbar,
   Button,
@@ -12,11 +13,12 @@ import {
 } from "react-native-paper";
 import myColors from "./assets/colors.json";
 import myColorsDark from "./assets/colorsDark.json";
+import { insertLocation, getAllLocations } from "./db";
 
 export default function App() {
   const [isSwitchOn, setIsSwitchOn] = useState(false); // variável para controle do darkMode
   const [isLoading, setIsLoading] = useState(false); // variável para controle do loading do button
-  const [locations, setLocations] = useState(null); // variável para armazenar as localizações
+  const [locations, setLocations] = useState([]); // variável para armazenar as localizações
 
   // Carrega tema default da lib RN PAPER com customização das cores. Para customizar o tema, veja:
   // https://callstack.github.io/react-native-paper/docs/guides/theming/#creating-dynamic-theme-colors
@@ -31,7 +33,7 @@ export default function App() {
     try {
       const darkModeOn = await AsyncStorage.getItem("preferences-key");
 
-      darkModeOn === 'true' ? setIsSwitchOn(true) : setIsSwitchOn(false);
+      darkModeOn === "true" ? setIsSwitchOn(true) : setIsSwitchOn(false);
 
     } catch (e) {
       throw e;
@@ -52,11 +54,15 @@ export default function App() {
   async function getLocation() {
     setIsLoading(true);
 
-    // Localização fake, substituir por localização real do dispositivo
-    const coords = {
-      latitude: -23.5505199,
-      longitude: -46.6333094,
-    };
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status === "granted") {
+      const { coords } = await Location.getCurrentPositionAsync({});
+      await insertLocation(coords);
+      console.log(coords)
+      setLocations(prevLocations => [...prevLocations, coords]);
+    } else {
+      console.log('algo deu errado')
+    }
 
     setIsLoading(false);
   }
@@ -64,18 +70,12 @@ export default function App() {
   // load locations from db sqlite - faz a leitura das localizações salvas no banco de dados
   async function loadLocations() {
     setIsLoading(true);
-
-    // generate fake locations
-    const locations = [];
-    for (let i = 0; i < 5; i++) {
-      locations.push({
-        id: i,
-        latitude: -23.5505199 + i,
-        longitude: -46.6333094 + i,
-      });
+    try {
+      const locations = await getAllLocations();
+      setLocations(locations);
+    } catch (error) {
+      console.error("Erro ao carregar localizações:", error);
     }
-
-    setLocations(locations);
     setIsLoading(false);
   }
 
@@ -89,11 +89,10 @@ export default function App() {
   // Efetiva a alteração do tema dark/light quando a variável isSwitchOn é alterada
   // É executado sempre que a variável isSwitchOn é alterada
   useEffect(() => {
-    if (isSwitchOn) {
-      setTheme({ ...theme, colors: myColorsDark.colors });
-    } else {
-      setTheme({ ...theme, colors: myColors.colors });
-    }
+    setTheme({
+      ...theme,
+      colors: isSwitchOn ? myColorsDark.colors : myColors.colors,
+    });
   }, [isSwitchOn]);
 
   return (
